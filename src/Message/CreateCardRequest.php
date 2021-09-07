@@ -3,16 +3,17 @@
 namespace Omnipay\Square\Message;
 
 use Omnipay\Common\Message\AbstractRequest;
-use SquareConnect;
+use Square\Apis\CardsApi;
+use Square\Environment;
+use Square\Models\Card;
+use Square\Models\CreateCardRequest as CreateSquareCardRequest;
+use Square\SquareClient;
 
 /**
  * Square Create Credit Card Request
  */
 class CreateCardRequest extends AbstractRequest
 {
-    protected $liveEndpoint = 'https://connect.squareup.com';
-    protected $testEndpoint = 'https://connect.squareupsandbox.com';
-
     public function getAccessToken()
     {
         return $this->getParameter('accessToken');
@@ -53,47 +54,53 @@ class CreateCardRequest extends AbstractRequest
         return $this->setParameter('cardholderName', $value);
     }
 
-    public function getEndpoint()
+    public function getEnvironment()
     {
-        return $this->getTestMode() === true ? $this->testEndpoint : $this->liveEndpoint;
+        return $this->getTestMode() === true ? Environment::SANDBOX : Environment::PRODUCTION;
     }
 
     private function getApiInstance()
     {
-        $api_config = new \SquareConnect\Configuration();
-        $api_config->setHost($this->getEndpoint());
-        $api_config->setAccessToken($this->getAccessToken());
-        $api_client = new \SquareConnect\ApiClient($api_config);
+        $api_client = new SquareClient([
+            'accessToken' => $this->getAccessToken(),
+            'environment' => $this->getEnvironment()
+        ]);
 
-        return new \SquareConnect\Api\CustomersApi($api_client);
+        return $api_client->getCardsApi();
     }
 
     public function getData()
     {
-        $data = new SquareConnect\Model\CreateCustomerCardRequest();
-        $data->setCardNonce($this->getCard());
-        $data->setCardholderName($this->getCardholderName());
+        $idempotencyKey = uniqid();
+        $sourceId = $this->getCard(); // Card nonce
+        $card = new Card;
+        $card->setCustomerId($this->getCustomerReference());
+
+        $data = new CreateSquareCardRequest($idempotencyKey, $sourceId, $card);
 
         return $data;
     }
 
     public function sendData($data)
     {
+        /** @var CardsApi $api_instance */
         $api_instance = $this->getApiInstance();
 
         try {
-            $result = $api_instance->createCustomerCard($this->getCustomerReference(), $data);
+            $result = $api_instance->createCard($data);
 
-            if ($error = $result->getErrors()) {
+            if ($errors = $result->getErrors()) {
                 $response = [
                     'status' => 'error',
-                    'code' => $error['code'],
-                    'detail' => $error['detail']
+                    'code' => $errors[0]->getCode(),
+                    'detail' => $errors[0]->getDetail(),
+                    'field' => $errors[0]->getField(),
+                    'category' => $errors[0]->getCategory()
                 ];
             } else {
                 $response = [
                     'status' => 'success',
-                    'card' => $result->getCard(),
+                    'card' => $result->getResult()->getCard(),
                     'customerId' => $this->getCustomerReference()
                 ];
             }

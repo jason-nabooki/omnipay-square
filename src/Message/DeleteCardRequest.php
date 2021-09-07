@@ -1,17 +1,11 @@
 <?php
-/**
- * Created by IntelliJ IDEA.
- * User: Dylan
- * Date: 17/04/2019
- * Time: 9:44 AM
- */
 
 namespace Omnipay\Square\Message;
 
-
 use Omnipay\Common\Message\AbstractRequest;
 use Omnipay\Common\Message\ResponseInterface;
-use SquareConnect;
+use Square\Environment;
+use Square\SquareClient;
 
 class DeleteCardRequest extends AbstractRequest
 {
@@ -30,7 +24,6 @@ class DeleteCardRequest extends AbstractRequest
     {
         return $this->setParameter('customerReference', $value);
     }
-
 
     public function getCustomerReference()
     {
@@ -57,6 +50,20 @@ class DeleteCardRequest extends AbstractRequest
         return $this->setParameter('cardReference', $value);
     }
 
+    public function getEnvironment()
+    {
+        return $this->getTestMode() === true ? Environment::SANDBOX : Environment::PRODUCTION;
+    }
+
+    private function getApiInstance()
+    {
+        $api_client = new SquareClient([
+            'accessToken' => $this->getAccessToken(),
+            'environment' => $this->getEnvironment()
+        ]);
+
+        return $api_client->getCustomersApi();
+    }
 
     public function getData()
     {
@@ -70,18 +77,18 @@ class DeleteCardRequest extends AbstractRequest
 
     public function sendData($data)
     {
-        SquareConnect\Configuration::getDefaultConfiguration()->setAccessToken($this->getAccessToken());
-
-        $api_instance = new SquareConnect\Api\CustomersApi();
+        $api_instance = $this->getApiInstance();
 
         try {
             $result = $api_instance->deleteCustomerCard($data['customer_id'], $data['card_id']);
 
-            if ($error = $result->getErrors()) {
+            if ($errors = $result->getErrors()) {
                 $response = [
                     'status' => 'error',
-                    'code' => $error['code'],
-                    'detail' => $error['detail']
+                    'code' => $errors[0]->getCode(),
+                    'detail' => $errors[0]->getDetail(),
+                    'field' => $errors[0]->getField(),
+                    'category' => $errors[0]->getCategory()
                 ];
             } else {
                 $response = [
